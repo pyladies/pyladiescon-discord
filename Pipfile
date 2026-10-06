@@ -15,6 +15,7 @@ python-dotenv = "*"
 yarl = "*"
 pydantic = "*"
 unidecode = "*"
+requests = "*"
 
 [dev-packages]
 black = "*"

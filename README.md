@@ -7,7 +7,93 @@
 An easy to deploy conference bot that manages roles for attendees via registration, notifies about
 upcoming sessions.
 Exposes Discord server statistics to organizers.
-We hosted the bot on Hetzner. And deployed with a single click Action from GitHub 😎.
+
+This repository is a standalone split of the `discord/` directory from
+[pyladies/global-conference-infra](https://github.com/pyladies/global-conference-infra),
+with full git history preserved. It was previously hosted on a Hetzner VPS;
+this repo packages it for [PSF cabotage](https://github.com/cabotage/cabotage-app),
+the platform that also hosts
+[pyladiescon-portal](https://github.com/pyladies/pyladiescon-portal).
+
+The bot is licensed under the MIT License (see `LICENSE`); it is a fork of the
+EuroPython Discord bot and retains EuroPython's copyright notice.
+
+## Deploying on cabotage
+
+Cabotage builds the `Dockerfile` at the repo root and runs each `Procfile`
+line as its own process. The bot is a single long-running worker with no
+HTTP server, so the whole deployment is the one line in `Procfile`:
+
+```
+worker-bot: python PyLadiesBot/bot.py
+```
+
+The `worker` name prefix matters: cabotage gives `web*` processes a TLS
+sidecar and expects them to serve traffic, `job*` processes require a cron
+`SCHEDULE`, and `release*`/`postdeploy*` run once per deploy. `worker*` is
+the plain long-running shape.
+
+### One-time setup
+
+1. Ask PSF infrastructure to create the project/application on
+   [cabotage](https://cabotage.us-east-2.psfhosted.computer/) and install the
+   cabotage GitHub App on this repository (same route as pyladiescon-portal).
+2. In the cabotage application, set the two secrets as environment
+   variables: `DISCORD_BOT_TOKEN` and `PRETIX_TOKEN`. The bot reads both
+   from the environment; no `.secrets` file exists in the container.
+3. Set the auto-deploy branch to `main`. Every merge to `main` then builds
+   and deploys automatically.
+4. **After the first deploy, scale `worker-bot` to exactly 1 replica.**
+   New processes start at zero replicas and cabotage never scales them on
+   its own, so the first deploy reports success without running the bot.
+   Keep it at one replica: two bots would double-post notifications and
+   race on registration.
+5. In the [Discord Developer Portal](https://discord.com/developers/applications),
+   under Bot > Privileged Gateway Intents, enable **Server Members Intent**
+   and **Message Content Intent**. The bot requests both and will not
+   connect without them.
+
+### Runtime constraints on cabotage
+
+- Processes run as `nobody` with only `/tmp` writable. All runtime state
+  paths in `config.toml` (`registered_log.txt`, `pretix_cache.json`,
+  `schedule.json`) point at `/tmp` for that reason; do not change them back
+  to relative paths.
+- **State is ephemeral.** `/tmp` is wiped on every deploy or restart. The
+  pretix and schedule caches rebuild themselves from the APIs. The
+  registered-tickets log resets, which removes the cross-restart guard
+  against one ticket being redeemed twice; a future improvement is to
+  rebuild it from the registration log channel at startup.
+- Configuration is the committed `PyLadiesBot/config.toml` baked into the
+  image. There is no `config.local.toml` override in production, so the
+  real conference values (pretix URL, program API URL, channel and role
+  IDs) must be committed before go-live. Channel and role IDs are not
+  secrets. The currently committed values are still EuroPython 2024
+  placeholders.
+- `livestreams.toml` is baked into the image; changing it means a merge to
+  `main` and the automatic redeploy that follows.
+
+### Known issue
+
+With the committed `config.toml`, the `extensions.organisers` extension
+fails to load (`Roles.__init__() got an unexpected keyword argument
+'volunteers_onsite'`): the `Roles` model does not accept the onsite/remote
+volunteer roles defined there. The bot logs the error and keeps running.
+Fix the role mapping before a real deployment, since there is no local
+override file in the image.
+
+### Running locally with Docker
+
+```shell
+docker build --tag pyladiescon-discord .
+docker run --rm \
+    --env DISCORD_BOT_TOKEN=$DISCORD_BOT_TOKEN \
+    --env PRETIX_TOKEN=$PRETIX_TOKEN \
+    pyladiescon-discord
+```
+
+The image runs as `nobody` and writes state to `/tmp`, mirroring the
+cabotage runtime.
 
 ![registration_view.png](./img/registration_view.png)
 

@@ -156,7 +156,7 @@ sudo apt install python3 python3-pip
 
 # pyenv
 curl https://pyenv.run | bash
-pyenv install 3.11.4
+pyenv install 3.14
 
 echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
 echo '[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
